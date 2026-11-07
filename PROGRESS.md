@@ -15,14 +15,15 @@ Updated: 2026-11-07 (Asia/Kolkata)
 
 ## In progress
 
-- Stage B: implementing the SQLite-backed mock tools, guarded agent workflow, persistent memory/context, and local chat/trace UI, starting with M0 repository/config/security foundation.
+- Stage B: implementing the SQLite-backed mock tools, guarded agent workflow, persistent memory/context, and local chat/trace UI. M0 configuration/security foundation is complete; M1 durable state and mock tools are next.
 
 ## Validation results
 
-- Tests/evaluations: not run yet.
+- `python3 -m unittest discover -s tests -p 'test_foundation.py' -v`: 15 passed.
+- `python3 scripts/check_secrets.py`: passed; `.env` is ignored and excluded.
 - OpenAI application generation calls: none; estimated application spend is `$0.000000`.
 - Claude plan session reported `$5.2401078` list-rate usage. This is coding-assistant usage, separate from the OpenAI application budget; earlier timed-out calls did not return usage metadata.
-- Git commits: `7874cd5` (`docs: define errand agent goal and architecture`).
+- Git commits: `7874cd5` (`docs: define errand agent goal and architecture`), `438d8e8` (`docs: add Claude Opus 5.5 architecture plan`).
 
 ## Outstanding
 
