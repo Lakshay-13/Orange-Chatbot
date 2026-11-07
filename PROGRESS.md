@@ -15,19 +15,23 @@ Updated: 2026-11-07 (Asia/Kolkata)
 
 ## In progress
 
-- Stage B: implementing the SQLite-backed mock tools, guarded agent workflow, persistent memory/context, and local chat/trace UI. M0 configuration/security foundation is complete; M1 durable state and mock tools are next.
+- Stage B: M0 configuration/security foundation and M1 durable state/mock-provider contracts are complete. M2 is the guarded conversation and approval workflow; memory/context, API client, UI, evaluation, and submission artifacts remain.
 
 ## Validation results
 
 - `python3 -m unittest discover -s tests -p 'test_foundation.py' -v`: 15 passed.
+- `python3 -m unittest discover -s tests -p 'test_mock_provider.py' -v`: 8 passed, including timeout recovery after reopening SQLite.
+- `python3 -m compileall -q errand_agent tests scripts`: passed.
+- `git diff --check`: passed.
 - `python3 scripts/check_secrets.py`: passed; `.env` is ignored and excluded.
 - OpenAI application generation calls: none; estimated application spend is `$0.000000`.
 - Claude plan session reported `$5.2401078` list-rate usage. This is coding-assistant usage, separate from the OpenAI application budget; earlier timed-out calls did not return usage metadata.
-- Git commits: `7874cd5` (`docs: define errand agent goal and architecture`), `438d8e8` (`docs: add Claude Opus 5.5 architecture plan`).
+- Git commits: `7874cd5` (`docs: define errand agent goal and architecture`), `438d8e8` (`docs: add Claude Opus 5.5 architecture plan`), `39a327b` (`feat: add bounded configuration and security foundation`).
 
 ## Outstanding
 
 - Complete every acceptance item in `GOAL.md` and the assignment PDF.
+- Implement agent state machine, deterministic authorization and exact-detail approval workflow.
 - Run offline tests and at least 20 evaluations; generate results from actual execution.
 - Produce the one-page design note, three verified bug records, raw timeout trace, and sanitized assistant transcript.
 - Run the app with the verified API model and record actual usage within the `$5` cap.
