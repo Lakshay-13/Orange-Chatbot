@@ -19,9 +19,10 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - `python3 scripts/run_evaluations.py` — **40/40 passed**; `docs/EVALUATION.md` was generated from the actual run.
 - `python3 -m compileall -q errand_agent tests scripts` — passed.
 - `node --check errand_agent/web/app.js` and `node --test tests/test_frontend_feedback.cjs` — passed.
+- Scripted local smoke test — `/` and `/api/session` both returned HTTP 200; session initialized with `LLM_MODE=scripted`; server shut down cleanly after requests.
 - `python3 scripts/export_timeout_trace.py` — verified 1 booking call, 1 timeout error, 1 authoritative status query/check, 1 stored booking, and `booked` result.
 - `python3 scripts/check_secrets.py` — clean. `git check-ignore .env` confirms it is ignored; `git ls-files --error-unmatch .env` confirms it is not tracked.
-- `git diff --check` — passed before the final documentation and recording updates; it will be repeated before commit.
+- `git diff --check` — passed in the final audit after the documentation and recording updates.
 
 ## Application API usage and limitation
 
