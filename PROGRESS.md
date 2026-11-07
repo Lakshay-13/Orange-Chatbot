@@ -33,4 +33,9 @@ Updated: 2026-11-07 (Asia/Kolkata)
 ## Remaining
 
 - The only requirement blocked by external state is successful live inference: the OpenAI project needs usable credits to verify an end-to-end live response. The app, tests, offline evaluation, and demo are complete.
-- Check/stage only intended files, ensure `.env` is absent from staged changes, create the final milestone commit(s), rerun Git/secret checks, and leave the local repository clean. Do not push.
+
+## Git milestones
+
+- `31f9342` — complete secured errand agent implementation, tests, review, traces, documentation, and recorded demo.
+- Earlier milestones: `7874cd5`, `438d8e8`, `39a327b`, and `0a481d2`.
+- No push was performed. `.env` was excluded from every commit.
