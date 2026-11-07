@@ -12,7 +12,7 @@ SECRET_ASSIGNMENTS = (
 TOKEN_PATTERN = re.compile(r"\bsk-[A-Za-z0-9_-]{16,}\b")
 PLACEHOLDERS = {"replace-with-your-openai-api-key", "replace-with-your-api-key", "placeholder", "your-api-key"}
 EMAIL_PATTERN = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I)
-PHONE_PATTERN = re.compile(r"(?<!\w)(?:\+?\d[\d ()-]{8,}\d)(?!\w)")
+PHONE_PATTERN = re.compile(r"(?<!\w)(?!20\d{2}-\d{2}-\d{2}(?:[T ]|\b))(?=(?:\D*\d){10,})(?:\+?\d[\d ()-]{8,}\d)(?!\w)")
 
 
 class Redactor:

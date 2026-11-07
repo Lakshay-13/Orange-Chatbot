@@ -4,42 +4,33 @@ Updated: 2026-11-07 (Asia/Kolkata)
 
 ## Completed
 
-- Read and visually checked all 3 pages of `Orange_Engineering_Assignment.pdf`.
-- Inspected the workspace: only the pre-existing `.env` was present; its contents were not displayed or changed.
-- Confirmed through the connected GitHub account that `Lakshay-13/Orange-Chatbot` is a private, empty repository. Initialized local `main` and attached `origin`.
-- Added `.gitignore` before staging; verified `.env` is ignored.
-- Verified Claude Code v2.1.319 is installed and authenticated. Session metadata resolved the `opus` alias to the first-party canonical model `claude-opus-5-5`.
-- Used the existing OpenAI key to list models. HTTP 200 returned `gpt-6-luna`; the key was not printed. This catalog request generated no model tokens.
-- Read official model and classifier/guardrail documentation.
-- Claude Opus 5.5 produced a 691-line, 36-scenario architecture and work plan at max effort. Read the full plan, compared it with the assignment, added verification notes, and copied it into `DESIGN_PLAN.md`.
+- Read and checked all three pages of the supplied assignment PDF; mapped its requirements into `GOAL.md`, design, implementation, tests, and submission artifacts.
+- Inspected the canonical repository and preserved its initial state. The existing `.env` is unchanged, ignored, untracked, and never included in assistant inputs or generated files. `.env.example` contains placeholder values only.
+- Stage A: verified Claude Code CLI authentication and `claude-opus-5-5`; used max effort for the architecture-only plan. `DESIGN_PLAN.md` is the implementation starting point.
+- Stage B: implemented the local chat/trace app, typed model proposals, deterministic tool authorization, seeded persistent mocks, explicit approvals, durable idempotency, booking recovery/status verification, proactive replacement, persistent memory, bounded context, and conservative API budget ledger.
+- Verified the OpenAI API catalog model ID `gpt-6-luna` and configured it centrally. No alternate model is substituted.
+- Completed the independent Claude Opus 5.5 max-effort review using a credential-free, read-only snapshot. Findings H1–H5, M1–M11, L1–L10 and reviewer uncertainties have reasoned dispositions in `docs/CLAUDE_REVIEW.md`; valid findings were fixed and have regression coverage.
+- Added the setup README, one-page design note (383 words), verified bug report (three required defects plus two further regressions), sanitized assistant transcript, generated evaluation table, and raw/annotated timeout trace.
+- Recorded and inspected `demo/errand_agent_demo.mov`: 193 seconds (3:13), 1920×1080 at 60 fps. It shows the local chat and trace, review injection boundary, exact approval, timeout/status recovery, direct prompt-injection filtering, memory provenance, and replacement options left unapproved.
 
-## In progress
+## Verification
 
-- Stage B: M0 configuration/security foundation and M1 durable state/mock-provider contracts are complete. M2 is the guarded conversation and approval workflow; memory/context, API client, UI, evaluation, and submission artifacts remain.
+- `python3 -m unittest discover -s tests -q` — **98 passed**.
+- `python3 scripts/run_evaluations.py` — **40/40 passed**; `docs/EVALUATION.md` was generated from the actual run.
+- `python3 -m compileall -q errand_agent tests scripts` — passed.
+- `node --check errand_agent/web/app.js` and `node --test tests/test_frontend_feedback.cjs` — passed.
+- `python3 scripts/export_timeout_trace.py` — verified 1 booking call, 1 timeout error, 1 authoritative status query/check, 1 stored booking, and `booked` result.
+- `python3 scripts/check_secrets.py` — clean. `git check-ignore .env` confirms it is ignored; `git ls-files --error-unmatch .env` confirms it is not tracked.
+- `git diff --check` — passed before the final documentation and recording updates; it will be repeated before commit.
 
-## Validation results
+## Application API usage and limitation
 
-- `python3 -m unittest discover -s tests -p 'test_foundation.py' -v`: 15 passed.
-- `python3 -m unittest discover -s tests -p 'test_mock_provider.py' -v`: 8 passed, including timeout recovery after reopening SQLite.
-- `python3 -m compileall -q errand_agent tests scripts`: passed.
-- `git diff --check`: passed.
-- `python3 scripts/check_secrets.py`: passed; `.env` is ignored and excluded.
-- OpenAI application generation calls: none; estimated application spend is `$0.000000`.
-- Claude plan session reported `$5.2401078` list-rate usage. This is coding-assistant usage, separate from the OpenAI application budget; earlier timed-out calls did not return usage metadata.
-- Git commits: `7874cd5` (`docs: define errand agent goal and architecture`), `438d8e8` (`docs: add Claude Opus 5.5 architecture plan`), `39a327b` (`feat: add bounded configuration and security foundation`).
+- Application model configured: **`gpt-6-luna`**. The catalog was verified, but the configured OpenAI project returned `HTTP 429 credit_balance_exhausted`; no generation response or successful live chat was obtained. No fallback model was used, and no further live calls will be made.
+- Read-only usage-ledger summary: **5 attempts** — 3 uncertain (4,578 estimated input + 3,600 output tokens; **$0.0022578 estimated/reserved**) and 2 rejected requests settled at zero tokens and zero cost. Actual provider billing for the 3 uncertain attempts is not observable from this client ledger; $0.0022578 is a conservative local estimate, not confirmed spend.
+- Automated tests, evaluation, trace export, and the recorded demo use offline mocks/scripted outputs and make no live API calls.
+- The application budget is capped at $5.00. Claude CLI’s reported plan-stage list-rate usage was $5.2401078 and is separate from application API usage.
 
-## Outstanding
+## Remaining
 
-- Complete every acceptance item in `GOAL.md` and the assignment PDF.
-- Implement agent state machine, deterministic authorization and exact-detail approval workflow.
-- Run offline tests and at least 20 evaluations; generate results from actual execution.
-- Produce the one-page design note, three verified bug records, raw timeout trace, and sanitized assistant transcript.
-- Run the app with the verified API model and record actual usage within the `$5` cap.
-- Record and verify a 3–5 minute local side-by-side demo or document a concrete recording limitation. Do not publish externally without authorization.
-- Run the requested Claude Opus 5.5 independent review after implementation, triage findings, and fix valid issues.
-- Check secrets and Git diff; commit each milestone and leave a clean local Git state.
-
-## Blockers and limitations
-
-- No implementation blocker is known.
-- Exact total Claude CLI billing is unknown because the earlier timed-out attempts did not return usage metadata.
+- The only requirement blocked by external state is successful live inference: the OpenAI project needs usable credits to verify an end-to-end live response. The app, tests, offline evaluation, and demo are complete.
+- Check/stage only intended files, ensure `.env` is absent from staged changes, create the final milestone commit(s), rerun Git/secret checks, and leave the local repository clean. Do not push.

@@ -99,8 +99,8 @@ class AppConfig:
 
         model = source.get("OPENAI_MODEL", "gpt-6-luna").strip()
         mode = source.get("LLM_MODE", "live").strip().lower()
-        if mode not in {"live", "scripted", "replay"}:
-            raise ValueError("LLM_MODE must be live, scripted, or replay")
+        if mode not in {"live", "scripted"}:
+            raise ValueError("LLM_MODE must be live or scripted")
         effort = source.get("REASONING_EFFORT_DEFAULT", "low").strip().lower()
         if effort not in {"none", "low", "medium", "high", "xhigh", "max"}:
             raise ValueError("REASONING_EFFORT_DEFAULT is unsupported")

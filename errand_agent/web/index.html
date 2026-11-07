@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f8fa">
+  <title>Orange Errand Agent</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/feedback.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand-mark" aria-hidden="true">O</div>
+    <div class="brand-copy">
+      <strong>Orange Errand Agent</strong>
+      <span>Home services, handled carefully</span>
+    </div>
+    <div class="top-actions">
+      <span id="modelStatus" class="status-pill">Checking model…</span>
+      <button id="bookingsButton" class="quiet-button" type="button">My bookings</button>
+      <button id="memoryButton" class="quiet-button" type="button">Memory</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <section class="panel chat-panel" aria-label="Errand agent chat">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">LOCAL ASSISTANT</p>
+          <h1>Plan a home-service errand</h1>
+          <p class="subheading">Find a provider, compare a quote, and approve any booking yourself.</p>
+        </div>
+        <div class="budget-box">
+          <span>API budget</span>
+          <strong id="budgetValue">$0.00 / $5.00</strong>
+        </div>
+      </div>
+
+      <div id="outbox" class="notification-stack" aria-live="polite"></div>
+      <div id="chat" class="chat-stream" aria-live="polite" aria-label="Conversation"></div>
+
+      <form id="composer" class="composer">
+        <label class="sr-only" for="messageInput">Message the errand agent</label>
+        <textarea id="messageInput" rows="2" maxlength="3000" placeholder="e.g. Find a plumber in Jaipur this week, mornings only, under ₹1,500."></textarea>
+        <div class="composer-footer">
+          <span>Only mock providers and bookings are used.</span>
+          <button id="sendButton" class="primary-button" type="submit">Send <span aria-hidden="true">↗</span></button>
+        </div>
+      </form>
+    </section>
+
+    <aside class="panel trace-panel" aria-label="Agent trace">
+      <div class="trace-heading">
+        <div>
+          <p class="eyebrow">OBSERVABILITY</p>
+          <h2>Live trace</h2>
+        </div>
+        <span id="traceCount" class="count-pill">0 events</span>
+      </div>
+      <p class="trace-intro">Security decisions, context manifests, tool calls, approval checks, retries, and verified outcomes appear here.</p>
+      <div id="traceList" class="trace-list" aria-live="polite"></div>
+      <details class="trace-legend">
+        <summary>What is logged?</summary>
+        <p>Tool results are sanitized, provider review text stays out of model context, and secrets are redacted before traces are written.</p>
+      </details>
+    </aside>
+  </main>
+
+  <section id="devControls" class="dev-controls" hidden aria-label="Deterministic demo controls">
+    <div>
+      <p class="eyebrow">DEMO SCENARIO</p>
+      <strong>Set the next mock booking result</strong>
+    </div>
+    <select id="scenarioSelect" aria-label="Next booking outcome">
+      <option value="timeout_booked">Timeout after possible success</option>
+      <option value="timeout_not_booked">Timeout, verified not booked</option>
+      <option value="success">Success</option>
+      <option value="slot_taken">Slot taken</option>
+    </select>
+    <button id="scenarioButton" class="quiet-button" type="button">Apply scenario</button>
+    <span class="demo-divider" aria-hidden="true"></span>
+    <span class="demo-explainer">Proactive cancellation</span>
+    <select id="cancelBookingSelect" aria-label="Booking for cancellation scenario">
+      <option value="book_000002">Upcoming AC service · book_000002</option>
+    </select>
+    <button id="cancelProviderButton" class="quiet-button" type="button">Simulate provider cancellation</button>
+  </section>
+
+  <dialog id="memoryDialog" class="modal">
+    <div class="modal-heading">
+      <div><p class="eyebrow">PERSISTENT MEMORY</p><h2>Preferences I remember</h2></div>
+      <button id="closeMemory" class="icon-button" type="button" aria-label="Close">×</button>
+    </div>
+    <p class="modal-intro">Explicit preferences and confirmed inferences can guide searches. Pending suggestions stay out of the agent context until you confirm them. Forgotten or superseded values are not restored.</p>
+    <div id="memoryList" class="memory-list"></div>
+  </dialog>
+
+  <dialog id="bookingsDialog" class="modal">
+    <div class="modal-heading">
+      <div><p class="eyebrow">MOCK BOOKINGS</p><h2>Your bookings</h2></div>
+      <button id="closeBookings" class="icon-button" type="button" aria-label="Close">×</button>
+    </div>
+    <p class="modal-intro">Choose a booking to request cancellation or rescheduling. A new approval is required for either action.</p>
+    <div id="bookingList" class="booking-list"></div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

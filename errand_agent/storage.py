@@ -77,6 +77,7 @@ class AgentStore:
                     expires_at REAL NOT NULL,
                     approved_at REAL,
                     response_json TEXT,
+                    execution_calls INTEGER NOT NULL DEFAULT 0,
                     created_at REAL NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS pending_session_status ON pending_actions(session_id, status);
@@ -121,6 +122,7 @@ class AgentStore:
                     estimated_tokens INTEGER NOT NULL,
                     manifest_json TEXT NOT NULL,
                     rendered_dynamic_text TEXT NOT NULL,
+                    request_payload_json TEXT NOT NULL DEFAULT '{}',
                     payload_sha256 TEXT NOT NULL,
                     created_at REAL NOT NULL
                 );
@@ -160,6 +162,11 @@ class AgentStore:
                 CREATE TABLE IF NOT EXISTS processed_provider_events (
                     event_key TEXT PRIMARY KEY,
                     booking_id TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'processing',
+                    result_json TEXT NOT NULL DEFAULT '{}',
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    next_attempt_at REAL NOT NULL DEFAULT 0,
+                    last_error TEXT,
                     created_at REAL NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS trace_events (
@@ -170,9 +177,25 @@ class AgentStore:
                     data_json TEXT NOT NULL,
                     created_at REAL NOT NULL
                 );
-                PRAGMA user_version=1;
                 """
             )
+            migrations = {
+                "pending_actions": {"execution_calls": "INTEGER NOT NULL DEFAULT 0"},
+                "context_logs": {"request_payload_json": "TEXT NOT NULL DEFAULT '{}'"},
+                "processed_provider_events": {
+                    "status": "TEXT NOT NULL DEFAULT 'processing'",
+                    "result_json": "TEXT NOT NULL DEFAULT '{}'",
+                    "attempts": "INTEGER NOT NULL DEFAULT 0",
+                    "next_attempt_at": "REAL NOT NULL DEFAULT 0",
+                    "last_error": "TEXT",
+                },
+            }
+            for table, columns in migrations.items():
+                present = {row[1] for row in self.connection.execute(f"PRAGMA table_info({table})")}
+                for column, declaration in columns.items():
+                    if column not in present:
+                        self.connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
+            self.connection.execute("PRAGMA user_version=3")
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:

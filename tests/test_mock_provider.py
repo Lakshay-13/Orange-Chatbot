@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
@@ -39,6 +40,13 @@ class MockProviderTests(unittest.TestCase):
             self.assertTrue(item["available_slots"])
         details = self.provider.get_provider("prov_001")
         self.assertTrue(any("ignore" in review.casefold() or "system:" in review.casefold() for review in details["reviews"]))
+
+    def test_search_excludes_elapsed_slots_today(self) -> None:
+        results = self.provider.search_providers("plumber", "Jaipur", {"start": "2026-11-07", "end": "2026-11-08"})
+        now = self.clock.now_ist()
+        slots = [datetime.fromisoformat(slot) for provider in results for slot in provider["available_slots"]]
+        self.assertTrue(slots)
+        self.assertTrue(all(slot > now for slot in slots))
 
     def test_quote_drift_and_ten_minute_hold_expiry(self) -> None:
         results = self.provider.search_providers("plumber", "Jaipur", self.range)
@@ -94,6 +102,26 @@ class MockProviderTests(unittest.TestCase):
         result = self.provider.cancel(booking_id, "cancel_once")
         self.assertEqual(result["status"], "cancelled")
         self.assertEqual(self.provider.list_bookings("u_test")[0]["status"], "cancelled_by_user")
+
+    def test_concurrent_cancel_replay_with_same_key_is_serialized(self) -> None:
+        hold, _ = self._hold("success")
+        booking = self.provider.book(hold["hold_id"], "book_for_concurrent_cancel")
+        self.provider.force_next("cancel", "timeout_cancelled")
+
+        def cancel_once():
+            try:
+                return self.provider.cancel(booking["booking_id"], "cancel_concurrent_key")["status"]
+            except MockToolError as error:
+                return error.code
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            outcomes = list(pool.map(lambda _: cancel_once(), range(2)))
+        self.assertEqual(sorted(outcomes), ["cancelled", "timeout"])
+        self.assertEqual(self.provider.list_bookings("u_test")[0]["status"], "cancelled_by_user")
+        count = self.provider.db.execute(
+            "SELECT count(*) FROM tool_idempotency WHERE operation='cancel' AND idem_key='cancel_concurrent_key'"
+        ).fetchone()[0]
+        self.assertEqual(count, 1)
 
     def test_reschedule_conflict_and_provider_cancellation_event(self) -> None:
         hold, _ = self._hold("success")

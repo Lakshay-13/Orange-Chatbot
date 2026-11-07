@@ -130,7 +130,7 @@ class MockProvider:
             self._put_state("config", config)
 
     def force_next(self, operation: str, outcome: Any) -> None:
-        if operation not in {"book", "search_providers", "hold_slot", "get_provider", "status", "cancel", "reschedule"}:
+        if operation not in {"book", "search_providers", "hold_slot", "get_provider", "status", "cancel", "reschedule", "list_bookings"}:
             raise ValueError("Unknown mock operation")
         config = self._get_state("config", {})
         queue = config.setdefault("forced", {}).setdefault(operation, [])
@@ -195,17 +195,21 @@ class MockProvider:
             first, last = date.fromisoformat(str(start)), date.fromisoformat(str(end))
         except (TypeError, ValueError):
             raise MockToolError("invalid_date_range", "Dates must use YYYY-MM-DD") from None
-        if first > last or (last - first).days > 30:
+        if first > last or (last - first).days > 14:
             raise MockToolError("invalid_date_range", "Date range is invalid or too wide")
         return first, last
 
     def _slots(self, provider_id: str, start: date, end: date) -> list[str]:
         slots: list[str] = []
-        current = max(start, self.clock.now_ist().date())
+        now = self.clock.now_ist()
+        current = max(start, now.date())
         while current <= end:
-            if current.weekday() < 6:
+            if current.weekday() < 7:
                 for hour in (8, 10, 12, 14, 16, 18):
-                    slot = datetime.combine(current, time(hour), tzinfo=IST).isoformat(timespec="minutes")
+                    slot_time = datetime.combine(current, time(hour), tzinfo=IST)
+                    if slot_time <= now:
+                        continue
+                    slot = slot_time.isoformat(timespec="minutes")
                     busy = self.db.execute(
                         "SELECT 1 FROM bookings WHERE provider_id=? AND slot=? AND status='confirmed'",
                         (provider_id, slot),
@@ -221,7 +225,7 @@ class MockProvider:
 
     def search_providers(self, service: str, area: str, date_range: dict[str, str] | tuple[str, str] | list[str]) -> list[dict[str, Any]]:
         forced = self._take_forced("search_providers")
-        if forced == "raise":
+        if forced in {"raise", "timeout", "hang"}:
             raise MockToolError("tool_error", "Provider search failed", retryable=True)
         if forced == "malformed":
             return [{"provider_id": None}]
@@ -256,7 +260,7 @@ class MockProvider:
 
     def get_provider(self, provider_id: str) -> dict[str, Any]:
         forced = self._take_forced("get_provider")
-        if forced == "raise":
+        if forced in {"raise", "timeout", "hang"}:
             raise MockToolError("tool_error", "Provider lookup failed", retryable=True)
         row = self._provider_row(provider_id)
         start = self.clock.now_ist().date()
@@ -267,7 +271,7 @@ class MockProvider:
 
     def hold_slot(self, provider_id: str, slot: str, user_id: str = "u_demo") -> dict[str, Any]:
         forced = self._take_forced("hold_slot")
-        if forced == "raise":
+        if forced in {"raise", "timeout", "hang"}:
             raise MockToolError("tool_error", "Could not create a slot hold", retryable=True)
         row = self._provider_row(provider_id)
         try:
@@ -331,6 +335,8 @@ class MockProvider:
                 return {"status": "hold_expired", "hold_id": hold_id}
             forced = self._take_forced("book")
             outcome = str(forced) if forced is not None else self._draw_outcome(idempotency_key)
+            if outcome == "timeout":
+                outcome = "timeout_booked"
             if outcome == "timeout_booked":
                 booking = self._create_booking(hold)
                 self._record_idempotency("book", idempotency_key, "done", {"kind": outcome, "booking": booking})
@@ -414,7 +420,7 @@ class MockProvider:
         if config.get("status_unavailable"):
             raise MockToolError("status_unavailable", "Authoritative status is temporarily unavailable", retryable=True)
         forced = self._take_forced("status")
-        if forced == "raise":
+        if forced in {"raise", "timeout", "hang"}:
             raise MockToolError("status_unavailable", "Authoritative status is temporarily unavailable", retryable=True)
         if config.get("status_lag", 0) > 0:
             config["status_lag"] -= 1
@@ -438,6 +444,10 @@ class MockProvider:
         return {**self._result_for_booking(row), "status": "booked" if row["status"] == "confirmed" else row["status"]}
 
     def cancel(self, booking_id: str, idempotency_key: str) -> dict[str, Any]:
+        with self._lock:
+            return self._cancel_locked(booking_id, idempotency_key)
+
+    def _cancel_locked(self, booking_id: str, idempotency_key: str) -> dict[str, Any]:
         old = self.db.execute("SELECT state,result_json FROM tool_idempotency WHERE operation='cancel' AND idem_key=?", (idempotency_key,)).fetchone()
         if old and old["state"] == "done":
             return json_loads(old["result_json"], {})
@@ -446,6 +456,20 @@ class MockProvider:
             raise MockToolError("booking_not_found", "Booking not found")
         if booking["status"] != "confirmed":
             return {"status": booking["status"], "booking_id": booking_id}
+        forced = self._take_forced("cancel")
+        if forced in {"raise", "timeout", "hang"}:
+            raise MockToolError("service_unavailable", "Cancellation provider is temporarily unavailable", retryable=True)
+        if forced in {"timeout_cancelled", "timeout_after_success"}:
+            with self.db:
+                self.db.execute("UPDATE bookings SET status='cancelled_by_user',updated_at=? WHERE booking_id=?", (self.clock.epoch(), booking_id))
+                self._record_idempotency("cancel", idempotency_key, "done", {"status": "cancelled", "booking_id": booking_id})
+            raise MockToolError("timeout", "Cancellation timed out after possible success", retryable=True, ambiguous=True)
+        if forced in {"success", "cancelled"}:
+            with self.db:
+                self.db.execute("UPDATE bookings SET status='cancelled_by_user',updated_at=? WHERE booking_id=?", (self.clock.epoch(), booking_id))
+                result = {"status": "cancelled", "booking_id": booking_id}
+                self._record_idempotency("cancel", idempotency_key, "done", result)
+            return result
         config = self._get_state("config", {})
         if config.get("cancel_always_503"):
             raise MockToolError("service_unavailable", "Transient provider error 503", retryable=True)
@@ -462,6 +486,10 @@ class MockProvider:
         return result
 
     def reschedule(self, booking_id: str, slot: str, idempotency_key: str) -> dict[str, Any]:
+        with self._lock:
+            return self._reschedule_locked(booking_id, slot, idempotency_key)
+
+    def _reschedule_locked(self, booking_id: str, slot: str, idempotency_key: str) -> dict[str, Any]:
         old = self.db.execute("SELECT state,result_json FROM tool_idempotency WHERE operation='reschedule' AND idem_key=?", (idempotency_key,)).fetchone()
         if old and old["state"] == "done":
             return json_loads(old["result_json"], {})
@@ -474,6 +502,8 @@ class MockProvider:
             raise MockToolError("invalid_slot", "Slot must be ISO date/time") from None
         config = self._get_state("config", {})
         forced = self._take_forced("reschedule")
+        if forced in {"raise", "timeout", "hang"}:
+            raise MockToolError("service_unavailable", "Reschedule provider is temporarily unavailable", retryable=True)
         conflicts = set(config.get("conflict_slots", []))
         if forced == "slot_conflict" or slot in conflicts or slot not in self._slots(booking["provider_id"], parsed.date(), parsed.date()):
             result = {"status": "slot_conflict", "booking_id": booking_id, "slot": slot}
@@ -486,6 +516,9 @@ class MockProvider:
         return result
 
     def list_bookings(self, user_id: str) -> list[dict[str, Any]]:
+        forced = self._take_forced("list_bookings")
+        if forced in {"raise", "timeout", "hang"}:
+            raise MockToolError("tool_error", "Booking list failed", retryable=True)
         rows = self.db.execute("SELECT * FROM bookings WHERE user_id=? ORDER BY slot", (user_id,)).fetchall()
         return [
             {"booking_id": row["booking_id"], "provider_id": row["provider_id"], "service": row["service"], "slot": row["slot"], "status": row["status"]}
@@ -497,6 +530,37 @@ class MockProvider:
             result = self.db.execute("UPDATE bookings SET status='cancelled_by_provider',updated_at=? WHERE booking_id=? AND status='confirmed'", (self.clock.epoch(), booking_id))
             if result.rowcount != 1:
                 raise MockToolError("booking_not_found_or_inactive", "Active booking not found")
+
+    def list_provider_cancellations(self, user_id: str) -> list[dict[str, Any]]:
+        rows = self.db.execute(
+            "SELECT booking_id,provider_id,service,slot,status FROM bookings WHERE user_id=? AND status='cancelled_by_provider' ORDER BY updated_at,booking_id",
+            (user_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def seed_demo_bookings(self, user_id: str = "u_demo") -> None:
+        """Seed a completed electrician job and an upcoming AC service for local demos."""
+        found = self.db.execute("SELECT count(*) FROM bookings WHERE booking_id IN ('book_000001','book_000002')").fetchone()[0]
+        if found == 2:
+            return
+        now = self.clock.epoch()
+        today = self.clock.now_ist().date()
+        past_slot = datetime.combine(today - timedelta(days=7), time(10), tzinfo=IST).isoformat(timespec="minutes")
+        upcoming_slot = datetime.combine(today + timedelta(days=3), time(10), tzinfo=IST).isoformat(timespec="minutes")
+        seeds = (
+            ("book_000001", "seed_hold_electrician", "prov_007", past_slot, "completed"),
+            ("book_000002", "seed_hold_ac_service", "prov_013", upcoming_slot, "confirmed"),
+        )
+        with self.db:
+            for booking_id, hold_id, provider_id, slot, status in seeds:
+                row = self._provider_row(provider_id)
+                self.db.execute(
+                    "INSERT OR IGNORE INTO bookings VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (booking_id, hold_id, user_id, provider_id, row["service"], slot, row["price_inr"], status, now - 86400 if status == "completed" else now, now),
+                )
+            counters = self._get_state("counters", {"booking": 0, "hold": 0})
+            counters["booking"] = max(2, int(counters.get("booking", 0)))
+            self._put_state("counters", counters)
 
     def _record_provider_event(self, *args: Any, **kwargs: Any) -> None:
         """Reserved hook for deterministic future provider events."""

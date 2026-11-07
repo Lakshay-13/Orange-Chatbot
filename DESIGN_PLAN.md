@@ -1,6 +1,6 @@
 # Errand Agent: Claude Design and Work Plan
 
-> **Planning only.** Written by Claude Opus 5.5 (`claude-opus-5-5`, Claude Agent SDK) on 2026-11-07. I created no application code, tests or other files.
+> **Planning only.** Written by Claude Opus 5.5 (`claude-opus-5-5`) through Claude Code CLI on 2026-11-07. I created no application code or tests during this stage.
 > **Inputs:** the assignment PDF text and the safe snapshot that came with it (`GOAL.md`, `DESIGN_PLAN.md`, `PROGRESS.md`, `.gitignore`, `.env.example`, `REPOSITORY_STATE.md`). I did not read any other path and did not use the network.
 > **[verify]** marks a fact taken from the snapshot that I could not check here, such as `gpt-6-luna` parameters, pricing or claims about third-party classifiers. Check each one during implementation.
 
