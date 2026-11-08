@@ -13,11 +13,12 @@ from typing import Any
 from .budget import estimate_tokens
 from .clock import Clock
 from .config import AppConfig
+from .gemini import build_gemini_payload, gemini_thinking_level
 from .ids import new_id
 from .intent import IntentState
 from .mock_provider import AREAS, SERVICES
 from .redact import Redactor, contains_secret_pattern
-from .responses import PROPOSAL_TOOLS, PROPOSAL_TOOL_CHOICE, SYSTEM_INSTRUCTIONS, choose_effort
+from .responses import PROPOSAL_SCHEMA, PROPOSAL_TOOLS, SYSTEM_INSTRUCTIONS, build_openai_payload, choose_effort
 from .storage import AgentStore, json_dumps, json_loads
 
 
@@ -396,7 +397,7 @@ class ContextBuilder:
         if total_budget < cap_sum:
             overflow = cap_sum - total_budget
             caps["history"] = max(0, caps["history"] - overflow)
-        tool_schema_text = json_dumps(PROPOSAL_TOOLS)
+        tool_schema_text = json_dumps(PROPOSAL_SCHEMA if self.config.llm_provider == "gemini" else PROPOSAL_TOOLS)
         schemas_text, schemas_tokens, schema_truncated = self._fit(tool_schema_text, caps["tool_schemas"], "tool_schemas")
         instructions, instructions_tokens, instructions_truncated = self._fit(SYSTEM_INSTRUCTIONS, caps["instructions"], "instructions")
         task_payload = {
@@ -518,19 +519,16 @@ class ContextBuilder:
             "schemas_sha256": hashlib.sha256(schemas_text.encode()).hexdigest(),
         }
         effort = choose_effort(current_text, self.config.reasoning_effort_default, self.config.allow_high_effort)
+        if self.config.llm_provider == "gemini":
+            effort = gemini_thinking_level(effort)
 
         def exact_request_payload() -> tuple[str, str, int]:
             rendered_dynamic = json.dumps(dynamic, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
             messages[:] = [{"role": "system", "content": instructions}, {"role": "user", "content": rendered_dynamic}]
-            request_payload = {
-                "model": self.config.openai_model,
-                "input": messages,
-                "reasoning": {"effort": effort},
-                "max_output_tokens": self.config.max_output_tokens,
-                "store": False,
-                "tool_choice": PROPOSAL_TOOL_CHOICE,
-                "tools": PROPOSAL_TOOLS,
-            }
+            if self.config.llm_provider == "gemini":
+                request_payload = build_gemini_payload(self.config, messages, effort)
+            else:
+                request_payload, _ = build_openai_payload(self.config, messages, current_text)
             serialized = json.dumps(request_payload, ensure_ascii=False, separators=(",", ":"))
             return rendered_dynamic, serialized, estimate_tokens(serialized)
 
@@ -563,3 +561,35 @@ class ContextBuilder:
         manifest["payload_sha256"] = payload_hash
         manifest["estimated_tokens"] = estimated
         return ContextResult(messages, manifest, rendered, estimated, payload_hash)
+
+    def record_fallback_payload(
+        self,
+        session_id: str,
+        call_id: str,
+        provider: str,
+        payload: dict[str, Any],
+    ) -> tuple[str, int]:
+        """Audit the exact fallback request alongside the primary request for this turn."""
+        if provider != "openai":
+            raise ValueError("Unsupported fallback context provider")
+        serialized = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        estimated = estimate_tokens(serialized)
+        if estimated > self.config.context_budget_tokens:
+            raise ValueError("context_budget_exceeded")
+        payload_hash = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+        with self.store.transaction() as db:
+            row = db.execute(
+                "SELECT manifest_json FROM context_logs WHERE session_id=? AND call_id=?",
+                (session_id, call_id),
+            ).fetchone()
+            if not row:
+                raise ValueError("context_audit_missing")
+            manifest = json_loads(row["manifest_json"], {})
+            manifest["fallback_provider"] = provider
+            manifest["fallback_estimated_tokens"] = estimated
+            manifest["fallback_payload_sha256"] = payload_hash
+            db.execute(
+                "UPDATE context_logs SET fallback_payload_json=?,fallback_payload_sha256=?,manifest_json=? WHERE session_id=? AND call_id=?",
+                (serialized, payload_hash, json_dumps(manifest), session_id, call_id),
+            )
+        return payload_hash, estimated

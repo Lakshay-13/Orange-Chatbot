@@ -53,11 +53,16 @@ SYSTEM_INSTRUCTIONS = """You are the language-understanding and comparison compo
 
 
 class ModelError(RuntimeError):
-    def __init__(self, code: str, message: str, retryable: bool = False, uncertain: bool = False) -> None:
+    def __init__(
+        self, code: str, message: str, retryable: bool = False, uncertain: bool = False,
+        primary_error_code: str | None = None, fallback_provider: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.retryable = retryable
         self.uncertain = uncertain
+        self.primary_error_code = primary_error_code
+        self.fallback_provider = fallback_provider
 
 
 @dataclass(frozen=True)
@@ -71,6 +76,10 @@ class ModelResult:
     estimated_cost_usd: float
     latency_ms: int
     request_id: str | None
+    thought_tokens: int = 0
+    provider: str = ""
+    fallback_from: str | None = None
+    fallback_reason: str | None = None
 
 
 def choose_effort(text: str, configured: str = "low", allow_high: bool = False) -> str:
@@ -82,6 +91,27 @@ def choose_effort(text: str, configured: str = "low", allow_high: bool = False) 
     if allow_high:
         return "high"
     return "medium"
+
+
+def build_openai_payload(
+    config: AppConfig,
+    input_messages: list[dict[str, str]],
+    current_user_text: str,
+) -> tuple[dict[str, Any], str]:
+    effort = choose_effort(current_user_text, config.reasoning_effort_default, config.allow_high_effort)
+    messages = input_messages if input_messages and input_messages[0].get("role") == "system" else [
+        {"role": "system", "content": SYSTEM_INSTRUCTIONS}, *input_messages,
+    ]
+    payload = {
+        "model": config.openai_model,
+        "input": messages,
+        "reasoning": {"effort": effort},
+        "max_output_tokens": config.max_output_tokens,
+        "store": False,
+        "tool_choice": PROPOSAL_TOOL_CHOICE,
+        "tools": PROPOSAL_TOOLS,
+    }
+    return payload, effort
 
 
 class OpenAIResponsesClient:
@@ -97,21 +127,11 @@ class OpenAIResponsesClient:
         current_user_text: str,
         timeout_seconds: float | None = None,
         on_retry: Callable[[int, str, float], None] | None = None,
+        on_fallback: Callable[[str, str, str], None] | None = None,
     ) -> ModelResult:
-        if not self.config.live_model_ready:
+        if not self.config.openai_model_ready:
             raise ModelError("model_unavailable", "The configured live model is not ready or verified.")
-        effort = choose_effort(current_user_text, self.config.reasoning_effort_default, self.config.allow_high_effort)
-        messages = input_messages if input_messages and input_messages[0].get("role") == "system" else [{"role": "system", "content": SYSTEM_INSTRUCTIONS}, *input_messages]
-        tools = PROPOSAL_TOOLS
-        request_body = {
-            "model": self.config.openai_model,
-            "input": messages,
-            "reasoning": {"effort": effort},
-            "max_output_tokens": self.config.max_output_tokens,
-            "store": False,
-            "tool_choice": PROPOSAL_TOOL_CHOICE,
-            "tools": tools,
-        }
+        request_body, effort = build_openai_payload(self.config, input_messages, current_user_text)
         serialized = json.dumps(request_body, ensure_ascii=False, separators=(",", ":"))
         input_est = estimate_tokens(serialized)
         if input_est > self.config.context_budget_tokens:
@@ -187,6 +207,7 @@ class OpenAIResponsesClient:
                 proposal=proposal, model=self.config.openai_model, effort=effort,
                 input_tokens=input_tokens, output_tokens=output_tokens, cached_input_tokens=cached_tokens,
                 estimated_cost_usd=settled["estimated_cost_usd"], latency_ms=latency_ms, request_id=request_id,
+                provider="openai",
             )
         raise last_error or ModelError("model_error", "The model request did not complete.")
 
@@ -237,7 +258,8 @@ class ScriptedModel:
         self, input_messages: list[dict[str, str]], current_user_text: str,
         timeout_seconds: float | None = None,
         on_retry: Callable[[int, str, float], None] | None = None,
+        on_fallback: Callable[[str, str, str], None] | None = None,
     ) -> ModelResult:
         self.calls.append(input_messages)
         proposal = self.proposals[min(len(self.calls) - 1, len(self.proposals) - 1)]
-        return ModelResult(proposal, "scripted", "low", 0, 0, 0, 0.0, 0, None)
+        return ModelResult(proposal, "scripted", "low", 0, 0, 0, 0.0, 0, None, provider="scripted")

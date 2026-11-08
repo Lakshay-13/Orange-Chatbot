@@ -1,42 +1,38 @@
 # Progress
 
-Updated: 2026-11-07 (Asia/Kolkata)
+Updated: 2026-11-08 (Asia/Kolkata)
 
 ## Completed
 
-- Read and checked all three pages of the supplied assignment PDF; mapped its requirements into `GOAL.md`, design, implementation, tests, and submission artifacts.
-- Inspected the canonical repository and preserved its initial state. The existing `.env` is unchanged, ignored, untracked, and never included in assistant inputs or generated files. `.env.example` contains placeholder values only.
-- Stage A: verified Claude Code CLI authentication and `claude-opus-5-5`; used max effort for the architecture-only plan. `DESIGN_PLAN.md` is the implementation starting point.
-- Stage B: implemented the local chat/trace app, typed model proposals, deterministic tool authorization, seeded persistent mocks, explicit approvals, durable idempotency, booking recovery/status verification, proactive replacement, persistent memory, bounded context, and conservative API budget ledger.
-- Verified the OpenAI API catalog model ID `gpt-6-luna` and configured it centrally. No alternate model is substituted.
-- Completed the independent Claude Opus 5.5 max-effort review using a credential-free, read-only snapshot. Findings H1–H5, M1–M11, L1–L10 and reviewer uncertainties have reasoned dispositions in `docs/CLAUDE_REVIEW.md`; valid findings were fixed and have regression coverage.
-- Added the setup README, one-page design note (383 words), verified bug report (three required defects plus two further regressions), sanitized assistant transcript, generated evaluation table, and raw/annotated timeout trace.
-- Recorded and inspected `demo/errand_agent_demo.mov`: 193 seconds (3:13), 1920×1080 at 60 fps. It shows the local chat and trace, review injection boundary, exact approval, timeout/status recovery, direct prompt-injection filtering, memory provenance, and replacement options left unapproved.
+- Read all three pages of the supplied assignment PDF and mapped requirements to the implementation and submission artifacts.
+- Preserved the existing `.env`; it has not been written by this work. `.env` remains ignored. `.env.example` contains placeholder values only.
+- Stage A completed with authenticated Claude Code using `claude-opus-5-5` at max effort. Architecture plan is in `DESIGN_PLAN.md`; the earlier independent review and dispositions are in `docs/CLAUDE_REVIEW.md`.
+- The focused Claude Opus 5.5 follow-up for the provider update was launched at max effort but returned no response after about 20 minutes and was stopped. The exact limitation and a full current self-review are recorded in `docs/PROVIDER_UPDATE_SELF_REVIEW.md`.
+- Implemented the local chat/trace app, security classification and intent refinement, typed model proposals, deterministic tool authorization, seeded persistent mock providers, action-bound approvals, durable idempotency and recovery, proactive replacement, persistent memory, bounded context, and global API budget ledger.
+- Gemini `gemini-flash-lite-latest` is primary and OpenAI `gpt-6-luna` is fallback after a Gemini model error. Each provider has its own pricing; requests share one persistent $5 limit. Local context and budget errors do not trigger fallback.
+- Fixed ambient credential precedence: the previous runtime environment contained API keys different from the project's `.env`, and `AppConfig` let those inherited values replace the project keys. The project file now wins for provider credentials in local runs; process credentials remain supported if the file has no provider key. Other process settings still override file settings.
+- Fixed trace redaction for one-time approval codes. The existing raw timeout trace and demo JSONL artifacts were sanitized; newly written SQLite and JSONL traces are covered by a regression test.
+- Completed a live local HTTP E2E using project `.env` credentials. Gemini made two structured calls, searched seeded mocks, returned two providers matching the saved preferences, and selected a provider. The simulated user selected its Saturday 08:00 IST slot at ₹887, reviewed the exact quote, and submitted explicit approval. The app verified the booking with authoritative mock status. Replaying the same confirmation returned `replayed=true` and left exactly one confirmed booking. No real provider or payment was contacted.
+- OpenAI also returned a successful structured response when called using the project `.env` key. The routing fallback path is exercised by offline tests; it was not activated in the successful live Gemini E2E.
+- Submission artifacts are present: setup README, one-page design note, bug table with seven verified bugs/regressions, sanitized coding-assistant transcript, generated evaluation, raw/annotated timeout trace, sanitized live Gemini E2E trace, and verified 3:13 screen recording showing chat and trace side by side.
 
 ## Verification
 
-- `python3 -m unittest discover -s tests -q` — **98 passed**.
-- `python3 scripts/run_evaluations.py` — **40/40 passed**; `docs/EVALUATION.md` was generated from the actual run.
-- `python3 -m compileall -q errand_agent tests scripts` — passed.
-- `node --check errand_agent/web/app.js` and `node --test tests/test_frontend_feedback.cjs` — passed.
-- Scripted local smoke test — `/` and `/api/session` both returned HTTP 200; session initialized with `LLM_MODE=scripted`; server shut down cleanly after requests.
-- `python3 scripts/export_timeout_trace.py` — verified 1 booking call, 1 timeout error, 1 authoritative status query/check, 1 stored booking, and `booked` result.
-- `python3 scripts/check_secrets.py` — clean. `git check-ignore .env` confirms it is ignored; `git ls-files --error-unmatch .env` confirms it is not tracked.
-- `git diff --check` — passed in the final audit after the documentation and recording updates.
-
-## Application API usage and limitation
-
-- Application model configured: **`gpt-6-luna`**. The catalog was verified, but the configured OpenAI project returned `HTTP 429 credit_balance_exhausted`; no generation response or successful live chat was obtained. No fallback model was used, and no further live calls will be made.
-- Read-only usage-ledger summary: **5 attempts** — 3 uncertain (4,578 estimated input + 3,600 output tokens; **$0.0022578 estimated/reserved**) and 2 rejected requests settled at zero tokens and zero cost. Actual provider billing for the 3 uncertain attempts is not observable from this client ledger; $0.0022578 is a conservative local estimate, not confirmed spend.
-- Automated tests, evaluation, trace export, and the recorded demo use offline mocks/scripted outputs and make no live API calls.
-- The application budget is capped at $5.00. Claude CLI’s reported plan-stage list-rate usage was $5.2401078 and is separate from application API usage.
+- Final full unit-suite rerun after credential-precedence and trace-redaction fixes: **113 passed**.
+- Offline simulated-user evaluation regenerated from the actual runner: **45/45 passed** (latest run 2026-11-08 04:43 UTC).
+- `compileall`, `node --check`, Node frontend test (1/1), secret scan, and `git diff --check` passed.
+- Live direct client calls using project `.env`: Gemini `gemini-3.5-flash-lite` succeeded (366 total usage tokens; estimated $0.0004552); OpenAI `gpt-6-luna` succeeded (535 total usage tokens; estimated $0.0000995).
+- Live local HTTP E2E: Gemini `gemini-3.5-flash-lite` used 1,824 tokens across two calls and was estimated at $0.0012622. Provider search, hold, explicit approval, booking status verification, and duplicate-confirmation replay all passed.
+- Earlier HTTP 402/429 results came from the different inherited process keys. No key values were printed. The project-file keys succeeded after selecting the correct source.
+- Current persistent application ledger: **17 requests, 12,514 tokens, $0.0047096 estimated/reserved**. This includes three earlier uncertain OpenAI reservations whose external billing is unknown. The global application ceiling is $5; estimated ledger headroom is $4.9952904. There is no per-test spending cap.
+- The live E2E trace is `docs/traces/live_gemini_booking_e2e.jsonl`; the annotated evidence is `docs/traces/live_gemini_booking_e2e_annotated.md`.
+- The existing `.env` hash and modification time match the start-of-turn snapshot. The 3:13 recording remains 1920×1080 at 60 fps. The secret scanner is clean, and submitted traces/docs contain no labeled approval codes.
 
 ## Remaining
 
-- The only requirement blocked by external state is successful live inference: the OpenAI project needs usable credits to verify an end-to-end live response. The app, tests, offline evaluation, and demo are complete.
+- Final staged-file review and secret scan are clean; commit the local milestone and verify the committed repository state is clean. Do not push.
 
 ## Git milestones
 
-- `31f9342` — complete secured errand agent implementation, tests, review, traces, documentation, and recorded demo.
-- Earlier milestones: `7874cd5`, `438d8e8`, `39a327b`, and `0a481d2`.
-- No push was performed. `.env` was excluded from every commit.
+- Existing milestones: `31f9342`, `7874cd5`, `438d8e8`, `39a327b`, and `0a481d2`.
+- Current provider, credential-precedence, trace-redaction, and evidence updates are local and uncommitted. No push is authorized or planned; `.env` is excluded.

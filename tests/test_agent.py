@@ -11,7 +11,8 @@ from errand_agent.agent import ErrandAgent
 from errand_agent.clock import FakeClock, IST
 from errand_agent.config import AppConfig
 from errand_agent.mock_provider import MockProvider
-from errand_agent.responses import ScriptedModel
+from errand_agent.model_router import PrimaryFallbackModel
+from errand_agent.responses import ModelError, ModelResult, ScriptedModel
 from errand_agent.storage import AgentStore
 
 
@@ -43,6 +44,47 @@ class AgentTests(unittest.TestCase):
         self.assertTrue(all(slot[11:16] < "12:00" for item in response["providers"] for slot in item["available_slots"]))
         self.assertEqual(self.provider.list_bookings("u_demo"), [])
         self.assertEqual(response["model_calls"], 2)
+
+    def test_fallback_model_is_traced_and_exact_openai_context_is_audited(self) -> None:
+        class FailingGemini:
+            def propose(self, *_args, **_kwargs):
+                raise ModelError("gemini_http_402_payment_required", "Gemini billing unavailable")
+
+        class OpenAIFallback:
+            def propose(self, *_args, **_kwargs):
+                return ModelResult(
+                    {
+                        "proposal": "ask_user", "reply": "Please share the remaining details.",
+                        "intent_patch": {
+                            "action": None, "service": None, "area": None, "date_start": None, "date_end": None,
+                            "earliest_time": None, "latest_time": None, "budget_max_inr": None, "no_budget": False,
+                        },
+                        "provider_id": None, "slot": None,
+                    },
+                    "gpt-6-luna", "low", 41, 12, 0, 0.00001, 4, "fallback-request",
+                    provider="openai",
+                )
+
+        self.agent.model = PrimaryFallbackModel(FailingGemini(), OpenAIFallback(), "gemini", "openai")
+        response = self.agent.handle(self.session, "Find a plumber.", "fallback-trace")
+        self.assertEqual(response["exit_reason"], "asked_user")
+        self.assertEqual(response["model_calls"], 1)
+        events = self.agent.trace.events(response["run_id"])
+        fallback = next(item["data"] for item in events if item["event"] == "model_fallback")
+        model_call = next(item["data"] for item in events if item["event"] == "model_call")
+        self.assertEqual(fallback["primary_provider"], "gemini")
+        self.assertEqual(fallback["fallback_provider"], "openai")
+        self.assertEqual(fallback["primary_error_code"], "gemini_http_402_payment_required")
+        self.assertEqual(model_call["provider"], "openai")
+        self.assertEqual(model_call["fallback_from"], "gemini")
+        audit = self.store.connection.execute(
+            "SELECT request_payload_json,fallback_payload_json,fallback_payload_sha256 FROM context_logs WHERE session_id=? ORDER BY created_at DESC LIMIT 1",
+            (self.session,),
+        ).fetchone()
+        self.assertEqual(json.loads(audit["request_payload_json"])["model"], "gemini-flash-lite-latest")
+        self.assertEqual(json.loads(audit["fallback_payload_json"])["model"], "gpt-6-luna")
+        import hashlib
+        self.assertEqual(hashlib.sha256(audit["fallback_payload_json"].encode()).hexdigest(), audit["fallback_payload_sha256"])
 
     def test_same_provider_as_last_time_is_resolved_without_losing_time_constraint(self) -> None:
         self.provider.seed_demo_bookings()

@@ -1,8 +1,8 @@
 # Offline Simulated-User Evaluation
 
-Generated from an actual run at **2026-11-07T15:38:01+00:00**. No live model/API calls are made by this runner.
+Generated from an actual run at **2026-11-08T04:43:11+00:00**. No live model/API calls are made by this runner.
 
-**Result: 40/40 passed; 0 failed or errored.**
+**Result: 45/45 passed; 0 failed or errored.**
 
 Each row runs the named deterministic `unittest` scenario and checks application invariants/state, not generated prose alone.
 
@@ -20,6 +20,11 @@ Each row runs the named deterministic `unittest` scenario and checks application
 | Provider review injection stays outside model context | Show review as untrusted and omit it from model input | All state and invariant assertions met | **PASS** | 1 offline test: `test_agent.AgentTests.test_prompt_injection_in_provider_review_never_enters_model_context` |
 | Model cannot invoke writes or claim success | Reject unverified claims and write-tool proposals | All state and invariant assertions met | **PASS** | 1 offline test: `test_agent.AgentTests.test_model_cannot_claim_unverified_success_or_trigger_write_tool` |
 | Exact approval and duplicate confirmation | Require bound approval and create one booking | All state and invariant assertions met | **PASS** | 1 offline test: `test_agent.AgentTests.test_approval_button_is_exact_and_repeated_confirmation_does_not_duplicate` |
+| Gemini error uses configured OpenAI fallback | Use OpenAI only after a primary Gemini model error | All state and invariant assertions met | **PASS** | 1 offline test: `test_model_router.ModelRouterTests.test_gemini_error_uses_openai_and_returns_traced_fallback_metadata` |
+| Local context failures do not trigger fallback | Avoid a provider call when the local payload is invalid | All state and invariant assertions met | **PASS** | 1 offline test: `test_model_router.ModelRouterTests.test_local_context_error_does_not_call_openai` |
+| Fallback request context is audited exactly | Persist the exact OpenAI fallback payload and its hash | All state and invariant assertions met | **PASS** | 1 offline test: `test_agent.AgentTests.test_fallback_model_is_traced_and_exact_openai_context_is_audited` |
+| Project credentials outrank inherited credentials | Use project .env API credentials while retaining process settings | All state and invariant assertions met | **PASS** | 1 offline test: `test_foundation.EnvFileTests.test_process_settings_override_file_but_project_credentials_win` |
+| Approval codes stay out of persisted traces | Redact one-time approval codes in SQLite and JSONL | All state and invariant assertions met | **PASS** | 1 offline test: `test_foundation.RedactionTests.test_trace_redacts_one_time_approval_codes_from_all_persisted_outputs` |
 | Injection appended to typed approval | Do not accept an approval code when classification flags the same message | All state and invariant assertions met | **PASS** | 1 offline test: `test_agent.AgentTests.test_attack_suffix_cannot_turn_typed_approval_code_into_approval` |
 | Mock commit persists across a timeout | Recover one committed booking after provider restart | All state and invariant assertions met | **PASS** | 1 offline test: `test_mock_provider.MockProviderTests.test_timeout_after_possible_success_survives_process_restart` |
 | Changed price and expired hold require new approval | Invalidate stale approval and require current quote | All state and invariant assertions met | **PASS** | 1 offline test: `test_approvals.ApprovalTests.test_expired_hold_requote_invalidates_old_approval_and_price_change_needs_new_approval` |

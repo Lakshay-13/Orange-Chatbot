@@ -20,7 +20,9 @@ class MemoryContextTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
-        self.config = AppConfig.from_env(self.root, {"LLM_MODE": "scripted", "CONTEXT_BUDGET_TOKENS": "3000"})
+        self.config = AppConfig.from_env(self.root, {
+            "LLM_PROVIDER": "openai", "LLM_MODE": "scripted", "CONTEXT_BUDGET_TOKENS": "3000",
+        })
         self.clock = FakeClock(datetime(2026, 11, 7, 10, 0, tzinfo=IST))
         self.store = AgentStore(self.root / "agent.sqlite3")
         self.memories = MemoryStore(self.store, self.clock)
@@ -139,6 +141,52 @@ class MemoryContextTests(unittest.TestCase):
         self.assertTrue(result.manifest["included_memory_ids"])
         self.assertEqual(row["payload_sha256"], result.payload_sha256)
         self.assertEqual(row["rendered_dynamic_text"], result.rendered_dynamic_text)
+
+    def test_gemini_context_log_hash_matches_exact_interactions_payload(self) -> None:
+        from errand_agent.responses import PROPOSAL_SCHEMA, build_openai_payload
+
+        config = AppConfig.from_env(self.root, {
+            "LLM_PROVIDER": "gemini", "LLM_MODE": "scripted",
+            "GEMINI_MODEL": "gemini-flash-lite-latest",
+            "CONTEXT_BUDGET_TOKENS": "3000",
+        })
+        builder = ContextBuilder(self.store, self.memories, config)
+        result = builder.build(
+            "current", "u_demo", "Find a plumber this week, mornings only.",
+            IntentState(action="book", service="plumber", area="Jaipur"),
+        )
+        row = self.store.connection.execute(
+            "SELECT request_payload_json,payload_sha256 FROM context_logs ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        payload = row["request_payload_json"]
+        sent = json.loads(payload)
+        self.assertEqual(sent["model"], "gemini-flash-lite-latest")
+        self.assertEqual(sent["input"], result.messages[1]["content"])
+        self.assertEqual(sent["system_instruction"], result.messages[0]["content"])
+        self.assertEqual(sent["response_format"]["schema"], PROPOSAL_SCHEMA)
+        self.assertFalse(sent["store"])
+        self.assertLessEqual(result.estimated_tokens, 3000)
+        self.assertEqual(hashlib.sha256(payload.encode()).hexdigest(), result.payload_sha256)
+        self.assertEqual(row["payload_sha256"], result.payload_sha256)
+        fallback_config = config.for_provider("openai")
+        fallback_payload, _ = build_openai_payload(
+            fallback_config, result.messages, "Find a plumber this week, mornings only.",
+        )
+        fallback_hash, fallback_tokens = builder.record_fallback_payload(
+            "current", result.manifest["call_id"], "openai", fallback_payload,
+        )
+        row = self.store.connection.execute(
+            "SELECT request_payload_json,fallback_payload_json,fallback_payload_sha256,manifest_json FROM context_logs WHERE call_id=?",
+            (result.manifest["call_id"],),
+        ).fetchone()
+        self.assertEqual(json.loads(row["request_payload_json"]), sent)
+        self.assertEqual(json.loads(row["fallback_payload_json"]), fallback_payload)
+        self.assertEqual(hashlib.sha256(row["fallback_payload_json"].encode()).hexdigest(), fallback_hash)
+        self.assertEqual(row["fallback_payload_sha256"], fallback_hash)
+        self.assertLessEqual(fallback_tokens, 3000)
+        manifest = json.loads(row["manifest_json"])
+        self.assertEqual(manifest["fallback_provider"], "openai")
+        self.assertEqual(manifest["fallback_payload_sha256"], fallback_hash)
 
     def test_long_seed_history_is_not_sent_to_current_session(self) -> None:
         builder = ContextBuilder(self.store, self.memories, self.config)

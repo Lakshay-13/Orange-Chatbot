@@ -31,3 +31,35 @@ This is a transcript excerpt of the substantive planning, implementation, and re
 ## Sensitive information removed
 
 The committed transcript includes no API key, authorization header, or secret value. It uses short excerpts rather than copying local session databases or unrelated user conversation.
+
+## User-directed Gemini migration and live verification
+
+**User → Codex:** “Skip openai key, use gemini api key in env and call gemini flash lite latest.”
+
+**Codex → User:** Verified the authenticated Gemini catalog lists `gemini-flash-lite-latest`, changed the app's active provider to Gemini, and kept the existing `.env` untouched. The key is sent only in the API header and is not present in model payloads or traces.
+
+**Initial live app result (later corrected):** A cookie-bound local HTTP chat reached Gemini generation and returned HTTP 402 before generation; no tool call, search, or booking occurred. A later configuration audit showed that this process used inherited credentials that differed from the project `.env`, because process values overrode the file. The 402 was not evidence that the Gemini key in the project `.env` needed credits.
+
+**User → Codex:** “try both the keys again to see if they work and continue the goal prompt after that.”
+
+**Result:** On 2026-11-08, both authenticated model catalogs listed the configured IDs, and one structured generation succeeded from each provider. A subsequent full chat received Gemini HTTP 402 and OpenAI HTTP 429 `credit_balance_exhausted`, then stopped before search. The later audit traced these failures to inherited keys overriding the project `.env`; no provider error message or key value is copied here.
+
+**User → Codex:** “keep gemini first and openai as fallback.”
+
+**Implementation:** Added a single bounded OpenAI fallback after a Gemini model error. Each model has its own configured list rates and uses the shared global $5 ledger. Traces identify provider and fallback reason, and context audit rows store the exact fallback payload and hash. Budget and local context errors do not trigger fallback.
+
+## Credential precedence fix and live end-to-end verification
+
+**User → Codex:** “it was working 5 min ago, you clearly have something incorrect in code, fix that.”
+
+**Diagnosis:** Compared key presence and equality without displaying either value. Both inherited process keys differed from the corresponding project `.env` values. `AppConfig` read the project file and then overlaid the process environment, so live calls used the wrong credentials. A direct single request through each provider client failed with the same provider billing codes; selecting the project-file values directly made one structured generation succeed through each client.
+
+**Fix:** Project `.env` credentials now take precedence for a local checkout; process credentials still work when the project file lacks that provider key. Other process settings continue to override `.env` settings. Regression tests cover both precedence directions. Trace redaction also now removes one-time approval codes before SQLite or JSONL persistence.
+
+**Live result:** The real local HTTP application used Gemini `gemini-3.5-flash-lite` for two structured calls (1,824 combined tokens; $0.0012622 estimated), searched the seeded mock catalog, and presented two preference-matching providers. The simulated user selected provider `prov_001`, Saturday 08:00 IST, at a ₹887 quote; the exact approval was explicitly submitted. The application verified the booking through authoritative mock status. Replaying the same approval request returned `replayed=true`; the booking list contained exactly one confirmed record. The sanitized trace is `docs/traces/live_gemini_booking_e2e.jsonl`.
+
+## Follow-up independent review
+
+**Claude Code invocation:** Version 2.1.319; `claude-opus-5-5`, max effort, no tools, no session persistence. A curated packet contained the assignment PDF text and current relevant code/tests/docs; `.env`, provider keys, databases, and runtime logs were excluded, and the child process did not receive OpenAI or Google API keys.
+
+**Outcome:** The process remained active with a network connection for about 20 minutes but returned no review text or error. It was stopped with SIGTERM (exit 143). No Claude findings are claimed for this update. The exact limitation and Codex self-review are saved in `docs/PROVIDER_UPDATE_SELF_REVIEW.md`; the earlier Claude review and its dispositions remain in `docs/CLAUDE_REVIEW.md`.

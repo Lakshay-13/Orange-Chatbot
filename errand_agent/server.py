@@ -204,7 +204,10 @@ class LocalRequestHandler(BaseHTTPRequestHandler):
                 return
             self._send_json(200, {
                 "session_id": session_id, "csrf_token": runtime.csrf_token(session_id),
-                "model": runtime.config.openai_model, "model_ready": runtime.config.live_model_ready,
+                "model": runtime.config.active_model, "model_provider": runtime.config.llm_provider,
+                "fallback_model_provider": runtime.config.llm_fallback_provider,
+                "fallback_model_ready": runtime.config.fallback_model_ready,
+                "model_ready": runtime.config.live_model_ready,
                 "llm_mode": runtime.config.llm_mode, "dev_controls": runtime.config.dev_controls,
                 "budget": runtime.agent.budget.summary(),
             }, cookie)
@@ -368,7 +371,12 @@ def serve(runtime: Runtime) -> None:
     monitor_thread.start()
     base = f"http://{runtime.config.app_host}:{runtime.config.app_port}"
     print(f"Errand Agent running locally at {base}")
-    print(f"Model: {runtime.config.openai_model} (ready={runtime.config.live_model_ready}); app API budget ${runtime.config.max_api_spend_usd:.2f}")
+    print(
+        f"Model: {runtime.config.llm_provider}/{runtime.config.active_model} "
+        f"(ready={runtime.config.live_model_ready}, fallback={runtime.config.llm_fallback_provider}, "
+        f"fallback_ready={runtime.config.fallback_model_ready}); "
+        f"app API budget ${runtime.config.max_api_spend_usd:.2f}"
+    )
     try:
         server.serve_forever(poll_interval=0.25)
     except KeyboardInterrupt:

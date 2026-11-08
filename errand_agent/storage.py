@@ -123,6 +123,8 @@ class AgentStore:
                     manifest_json TEXT NOT NULL,
                     rendered_dynamic_text TEXT NOT NULL,
                     request_payload_json TEXT NOT NULL DEFAULT '{}',
+                    fallback_payload_json TEXT,
+                    fallback_payload_sha256 TEXT,
                     payload_sha256 TEXT NOT NULL,
                     created_at REAL NOT NULL
                 );
@@ -181,7 +183,11 @@ class AgentStore:
             )
             migrations = {
                 "pending_actions": {"execution_calls": "INTEGER NOT NULL DEFAULT 0"},
-                "context_logs": {"request_payload_json": "TEXT NOT NULL DEFAULT '{}'"},
+                "context_logs": {
+                    "request_payload_json": "TEXT NOT NULL DEFAULT '{}'",
+                    "fallback_payload_json": "TEXT",
+                    "fallback_payload_sha256": "TEXT",
+                },
                 "processed_provider_events": {
                     "status": "TEXT NOT NULL DEFAULT 'processing'",
                     "result_json": "TEXT NOT NULL DEFAULT '{}'",

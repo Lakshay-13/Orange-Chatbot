@@ -5,7 +5,7 @@ A local chat app for finding mock home-service providers and managing mock booki
 ## Requirements
 
 - Python 3.11 or newer
-- An OpenAI API key for live model mode
+- A Gemini API key for live model mode
 - A modern browser
 
 The application and tests use only the Python standard library. No live model call is made by the automated tests or evaluation runner.
@@ -13,11 +13,15 @@ The application and tests use only the Python standard library. No live model ca
 ## Setup and run
 
 1. Clone this repository and open its directory.
-2. If you do not already have a `.env`, copy `.env.example` to `.env`. Preserve an existing `.env`; add or update `OPENAI_API_KEY` locally without committing it.
+2. If you do not already have a `.env`, copy `.env.example` to `.env`. Preserve an existing `.env`; set `GEMINI_API_KEY` locally without committing it.
 3. Run `python3 -m errand_agent.server`.
 4. Open the printed local address, normally `http://127.0.0.1:8000/`.
 
-The verified application model is `gpt-6-luna`. Settings and spending limits are centralized in `.env`; defaults start at low reasoning effort and raise effort only for complex requests. Model prices are configurable and sourced from [OpenAI API pricing](https://developers.openai.com/api/docs/pricing). The application refuses to substitute a different model silently. It keeps local SQLite state in `data/` and redacted JSONL traces in `logs/traces/`.
+For local runs, provider credentials set in the project `.env` take precedence over same-named credentials inherited from the process environment. This avoids accidentally using credentials from the shell or a developer tool. If the project file has no credential for a provider, process environment variables are used.
+
+The primary application model is Google's `gemini-flash-lite-latest` alias. Its current catalog target was verified as `gemini-3.5-flash-lite`; aliases may be updated by Google. The configured OpenAI `gpt-6-luna` model is a fallback after a Gemini model error. The router records the failure and fallback in the trace; it does not fail over for local context or budget-limit errors. Each provider uses separate prices, and both share the same persistent global budget. Reasoning starts at low effort and increases only for complex requests. It keeps local SQLite state in `data/` and redacted JSONL traces in `logs/traces/`.
+
+The live Gemini Interactions API uses `GEMINI_API_KEY` in an HTTP header and sets `store=false`; the OpenAI fallback uses `OPENAI_API_KEY` in its authorization header. The shared application budget defaults to **$5 total**, with configurable global request/token limits; known billing failures are not retried. Current standard rates are centrally configured: Gemini 3.5 Flash-Lite $0.30/1M input, $2.50/1M output (including thinking), $0.03/1M cached input; OpenAI GPT-6 Luna $0.10/1M input, $0.50/1M output, $0.01/1M cached input. Check [Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing) and [OpenAI pricing](https://developers.openai.com/api/docs/pricing) before changing model identifiers or rates. Valid keys can list models while generation may still be blocked by project billing.
 
 For an offline scripted run, set `LLM_MODE=scripted`. The deterministic model double is for local demonstrations and tests; it is not a substitute for live model behavior.
 
@@ -32,7 +36,7 @@ python3 scripts/run_evaluations.py
 python3 scripts/check_secrets.py
 ```
 
-The generated invariant table is [docs/EVALUATION.md](docs/EVALUATION.md). Recreate the timeout-after-possible-success trace with `python3 scripts/export_timeout_trace.py`; it uses a temporary database and mock provider.
+The generated invariant table is [docs/EVALUATION.md](docs/EVALUATION.md). Recreate the timeout-after-possible-success trace with `python3 scripts/export_timeout_trace.py`; it uses a temporary database and mock provider. The latest live Gemini HTTP run, environment credential precedence fix, and usage ledger are recorded in [PROGRESS.md](PROGRESS.md). The sanitized live HTTP booking trace is [docs/traces/live_gemini_booking_e2e.jsonl](docs/traces/live_gemini_booking_e2e.jsonl), with an annotated summary beside it.
 
 ## Security and behavior
 

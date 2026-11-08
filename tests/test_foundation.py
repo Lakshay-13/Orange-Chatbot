@@ -12,6 +12,8 @@ from errand_agent.envfile import read_env_file
 from errand_agent.ids import fingerprint, idempotency_key
 from errand_agent.redact import Redactor, contains_secret_pattern
 from errand_agent.security import classify_untrusted_text, classify_user, normalize_text
+from errand_agent.storage import AgentStore
+from errand_agent.trace import TraceRecorder
 
 
 class EnvFileTests(unittest.TestCase):
@@ -27,15 +29,38 @@ class EnvFileTests(unittest.TestCase):
             self.assertEqual(values["EMPTY"], "")
             self.assertEqual(path.read_bytes(), before)
 
-    def test_environment_overrides_file_without_key_in_repr(self) -> None:
+    def test_process_settings_override_file_but_project_credentials_win(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / ".env").write_text("OPENAI_API_KEY=secret-from-file\nAPP_PORT=8001\n", encoding="utf-8")
-            cfg = AppConfig.from_env(root, {"APP_PORT": "8002", "LLM_MODE": "scripted"})
+            (root / ".env").write_text(
+                "OPENAI_API_KEY=project-openai-secret\nGEMINI_API_KEY=project-gemini-secret\nAPP_PORT=8001\n",
+                encoding="utf-8",
+            )
+            cfg = AppConfig.from_env(root, {
+                "OPENAI_API_KEY": "ambient-openai-secret",
+                "GEMINI_API_KEY": "ambient-gemini-secret",
+                "APP_PORT": "8002",
+                "LLM_MODE": "scripted",
+            })
             self.assertEqual(cfg.app_port, 8002)
-            self.assertEqual(cfg.openai_api_key, "secret-from-file")
-            self.assertNotIn("secret-from-file", repr(cfg))
+            self.assertEqual(cfg.openai_api_key, "project-openai-secret")
+            self.assertEqual(cfg.gemini_api_key, "project-gemini-secret")
+            for secret in ("project-openai-secret", "project-gemini-secret", "ambient-openai-secret", "ambient-gemini-secret"):
+                self.assertNotIn(secret, repr(cfg))
             self.assertFalse(cfg.live_model_ready)
+            self.assertEqual(cfg.llm_provider, "gemini")
+            self.assertEqual(cfg.llm_fallback_provider, "openai")
+
+    def test_process_credentials_are_used_when_project_file_has_no_credentials(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            cfg = AppConfig.from_env(Path(directory), {
+                "OPENAI_API_KEY": "ambient-openai-secret",
+                "GEMINI_API_KEY": "ambient-gemini-secret",
+            })
+            self.assertEqual(cfg.openai_api_key, "ambient-openai-secret")
+            self.assertEqual(cfg.gemini_api_key, "ambient-gemini-secret")
+            self.assertNotIn("ambient-openai-secret", repr(cfg))
+            self.assertNotIn("ambient-gemini-secret", repr(cfg))
 
     def test_limits_reject_invalid_values(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -64,12 +89,20 @@ class ClockAndIdTests(unittest.TestCase):
 
 class RedactionTests(unittest.TestCase):
     def test_exact_and_pattern_secrets_are_redacted(self) -> None:
-        redactor = Redactor("test-secret-value")
+        redactor = Redactor("test-secret-value", "gemini-secret-value")
         fake_key = "sk-" + "proj-" + "123456789012345678901"
-        result = redactor.redact("OPENAI_API_KEY=test-secret-value " + fake_key).replace("[REDACTED_SECRET]", "")
+        google_key = "AIza" + "G" * 35
+        result = redactor.redact(
+            "OPENAI_API_KEY=test-secret-value GEMINI_API_KEY=gemini-secret-value "
+            + "x-goog-api-key: gemini-secret-value " + fake_key + " " + google_key
+        ).replace("[REDACTED_SECRET]", "")
         self.assertNotIn("test-secret-value", result)
+        self.assertNotIn("gemini-secret-value", result)
         self.assertNotIn("sk-", result)
+        self.assertNotIn("AIza", result)
         self.assertTrue(contains_secret_pattern("OPENAI_API_KEY=" + "sk-" + "123456789012345678901"))
+        self.assertTrue(contains_secret_pattern("GEMINI_API_KEY=AIza" + "G" * 35))
+        self.assertTrue(contains_secret_pattern("x-goog-api-key: value"))
         self.assertFalse(contains_secret_pattern("OPENAI_API_KEY=replace-with-your-openai-api-key"))
 
     def test_iso_slots_survive_phone_redaction_but_phone_numbers_do_not(self) -> None:
@@ -78,6 +111,27 @@ class RedactionTests(unittest.TestCase):
         self.assertIn("2026-11-08T10:00+05:30", value)
         self.assertNotIn("98765", value)
         self.assertIn("[REDACTED_PHONE]", value)
+
+    def test_trace_redacts_one_time_approval_codes_from_all_persisted_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = AgentStore(root / "agent.sqlite3")
+            try:
+                trace = TraceRecorder(store, root / "traces", redactor=Redactor())
+                record = trace.emit(
+                    "run_test", "run_end", "session_test",
+                    user_facing_outcome="Approval: Book plumber. Approval code ABC234.",
+                )
+                serialized = str(record)
+                file_contents = (root / "traces" / "run_test.jsonl").read_text(encoding="utf-8")
+                database_contents = store.connection.execute(
+                    "SELECT data_json FROM trace_events WHERE run_id='run_test'",
+                ).fetchone()[0]
+                for output in (serialized, file_contents, database_contents):
+                    self.assertNotIn("ABC234", output)
+                    self.assertIn("[REDACTED_APPROVAL_CODE]", output)
+            finally:
+                store.close()
 
 
 class SecurityClassifierTests(unittest.TestCase):

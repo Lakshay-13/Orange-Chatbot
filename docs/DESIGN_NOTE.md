@@ -4,7 +4,7 @@
 
 The local app runs one model-driven agent behind deterministic stages: classify input, extract intent, build bounded context, request a typed proposal, authorize read tools, and display options. A single agent keeps state simple; application code owns permissions and writes. Reviews are labeled in the UI and excluded from model context. Search results are reduced to typed fields before a second proposal turn; no model tool can book, cancel, or reschedule.
 
-The configured model is `gpt-6-luna`, with low reasoning by default and higher effort for complex requests. The API catalog confirmed the ID. Live inference returned `HTTP 429 credit_balance_exhausted`; offline tests use an explicit scripted model.
+Gemini `gemini-flash-lite-latest` is primary (currently `gemini-3.5-flash-lite`); OpenAI `gpt-6-luna` is the user-authorized fallback after a Gemini model error. Both use typed proposals, separate rates, and the global $5 ledger. Local `.env` credentials now take precedence over unrelated inherited keys, which caused the earlier 402/429 responses. A live HTTP run used Gemini for two model calls, then a mock provider search, exact quote hold, explicit approval, authoritative booking verification, and duplicate-confirmation replay with one booking. OpenAI generation and offline fallback paths also passed. Traces hash request payloads and redact one-time approval codes. Current rates: [Gemini](https://ai.google.dev/gemini-api/docs/pricing), [OpenAI](https://developers.openai.com/api/docs/pricing).
 
 ## Security classifier choice
 

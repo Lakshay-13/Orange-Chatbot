@@ -41,7 +41,10 @@ class ModelBudgetTests(unittest.TestCase):
         self.temp.cleanup()
 
     def config(self, **overrides: str) -> AppConfig:
-        values = {"LLM_MODE": "live", "OPENAI_API_KEY": "test-secret-value", "PRICE_VERIFIED_MODEL": "gpt-6-luna"}
+        values = {
+            "LLM_PROVIDER": "openai", "LLM_MODE": "live", "OPENAI_API_KEY": "test-secret-value",
+            "PRICE_VERIFIED_MODEL": "gpt-6-luna",
+        }
         values.update(overrides)
         return AppConfig.from_env(self.root, values)
 

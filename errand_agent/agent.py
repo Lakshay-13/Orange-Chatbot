@@ -13,12 +13,14 @@ from .budget import BudgetExceeded, BudgetLedger
 from .clock import Clock
 from .config import AppConfig
 from .gateway import ToolDenied, ToolGateway
+from .gemini import GeminiInteractionsClient
 from .ids import new_id
 from .intent import SERVICE_TERMS, IntentState, merge_intent, parse_user_message, sanitize_model_patch
 from .memory import ContextBuilder, MemoryStore
 from .mock_provider import MockProvider, MockToolError
+from .model_router import PrimaryFallbackModel
 from .redact import Redactor, contains_secret_pattern
-from .responses import ModelError, OpenAIResponsesClient, ScriptedModel, SYSTEM_INSTRUCTIONS
+from .responses import ModelError, OpenAIResponsesClient, ScriptedModel, SYSTEM_INSTRUCTIONS, build_openai_payload
 from .security import Classification, classify_user
 from .storage import AgentStore, json_dumps, json_loads
 from .trace import TraceRecorder
@@ -42,7 +44,7 @@ class ErrandAgent:
         self.store = store
         self.provider = provider
         self.clock = clock or Clock()
-        self.redactor = Redactor(config.openai_api_key)
+        self.redactor = Redactor(config.openai_api_key, config.gemini_api_key)
         self.trace = trace or TraceRecorder(store, config.trace_dir, self.clock, self.redactor)
         self.budget = BudgetLedger(store, config)
         self.memories = MemoryStore(store, self.clock, self.redactor)
@@ -53,6 +55,13 @@ class ErrandAgent:
             self.model = model
         elif config.llm_mode == "scripted":
             self.model = ScriptedModel()
+        elif config.llm_provider == "gemini":
+            primary = GeminiInteractionsClient(config, self.budget)
+            fallback = None
+            if config.fallback_model_ready:
+                fallback_config = config.for_provider("openai")
+                fallback = OpenAIResponsesClient(fallback_config, BudgetLedger(store, fallback_config))
+            self.model = PrimaryFallbackModel(primary, fallback, "gemini", "openai" if fallback else None)
         else:
             self.model = OpenAIResponsesClient(config, self.budget)
         self.memories.seed_demo("u_demo")
@@ -351,6 +360,21 @@ class ErrandAgent:
         model_calls = 0
         observations: list[dict[str, Any]] = []
         labels = {"service": "which home service you need", "area": "which area to search", "date_range": "what day or date range works"}
+
+        def fallback_callback_for(context: Any):
+            def record_fallback(primary: str, fallback: str, code: str) -> None:
+                fallback_config = self.config.for_provider(fallback)
+                payload, _ = build_openai_payload(fallback_config, context.messages, safe_text)
+                payload_hash, estimated = self.context.record_fallback_payload(
+                    session_id, context.manifest["call_id"], fallback, payload,
+                )
+                self.trace.emit(
+                    run_id, "model_fallback", session_id, primary_provider=primary,
+                    fallback_provider=fallback, primary_error_code=code,
+                    payload_sha256=payload_hash, estimated_input_tokens=estimated,
+                )
+            return record_fallback
+
         try:
             context = self.context.build(session_id, user_id, safe_text, intent, observations, exclude_message_id=message_id_db)
             self.trace.emit(run_id, "context_manifest", session_id, **context.manifest)
@@ -363,10 +387,15 @@ class ErrandAgent:
                     run_id, "retry", session_id, operation="model", attempt=attempt,
                     provider_code=code, delay_seconds=delay,
                 ),
+                on_fallback=fallback_callback_for(context),
             )
             self.trace.emit(
-                run_id, "model_call", session_id, model=result.model, effort=result.effort,
+                run_id, "model_call", session_id, model=result.model,
+                provider=result.provider or self.config.llm_provider,
+                fallback_from=result.fallback_from, fallback_reason=result.fallback_reason,
+                effort=result.effort,
                 input_tokens=result.input_tokens, output_tokens=result.output_tokens,
+                thought_tokens=result.thought_tokens,
                 cached_input_tokens=result.cached_input_tokens, estimated_cost_usd=result.estimated_cost_usd,
                 latency_ms=result.latency_ms, request_id=result.request_id,
                 proposal=result.proposal.get("proposal"), payload_sha256=context.payload_sha256,
@@ -401,7 +430,13 @@ class ErrandAgent:
             self.trace.emit(run_id, "model_budget_blocked", session_id, code=error.code, requests=self.budget.summary()["requests"])
             return self._finish_response(run_id, session_id, user_id, message_id, {"exit_reason": reason, "model_calls": model_calls}, "The model budget is exhausted or cannot safely cover another request. Your details are saved; no provider search was made.")
         except ModelError as error:
-            self.trace.emit(run_id, "model_error", session_id, code=error.code, retryable=error.retryable, uncertain=error.uncertain, requests=self.budget.summary()["requests"])
+            self.trace.emit(
+                run_id, "model_error", session_id, code=error.code,
+                retryable=error.retryable, uncertain=error.uncertain,
+                primary_error_code=error.primary_error_code,
+                fallback_provider=error.fallback_provider,
+                requests=self.budget.summary()["requests"],
+            )
             return self._finish_response(run_id, session_id, user_id, message_id, {"exit_reason": error.code, "model_calls": model_calls}, "I couldn't get a reliable model response, so I did not search or take any action. Your request is saved; please try again.")
         except ValueError as error:
             if str(error) == "context_budget_exceeded":
@@ -441,10 +476,15 @@ class ErrandAgent:
                         run_id, "retry", session_id, operation="model", attempt=attempt,
                         provider_code=code, delay_seconds=delay,
                     ),
+                    on_fallback=fallback_callback_for(context),
                 )
                 self.trace.emit(
-                    run_id, "model_call", session_id, model=comparison.model, effort=comparison.effort,
+                    run_id, "model_call", session_id, model=comparison.model,
+                    provider=comparison.provider or self.config.llm_provider,
+                    fallback_from=comparison.fallback_from, fallback_reason=comparison.fallback_reason,
+                    effort=comparison.effort,
                     input_tokens=comparison.input_tokens, output_tokens=comparison.output_tokens,
+                    thought_tokens=comparison.thought_tokens,
                     cached_input_tokens=comparison.cached_input_tokens, estimated_cost_usd=comparison.estimated_cost_usd,
                     latency_ms=comparison.latency_ms, request_id=comparison.request_id,
                     proposal=comparison.proposal.get("proposal"), selected_provider_id=comparison.proposal.get("provider_id"),
@@ -464,7 +504,11 @@ class ErrandAgent:
                     self.trace.emit(run_id, "model_turn_exceeded_deadline", session_id, turn=model_calls)
             except (BudgetExceeded, ModelError, ValueError) as error:
                 code = getattr(error, "code", "context_budget_exceeded" if str(error) == "context_budget_exceeded" else "model_error")
-                self.trace.emit(run_id, "comparison_model_unavailable", session_id, code=code)
+                self.trace.emit(
+                    run_id, "comparison_model_unavailable", session_id, code=code,
+                    primary_error_code=getattr(error, "primary_error_code", None),
+                    fallback_provider=getattr(error, "fallback_provider", None),
+                )
         if memory_refs:
             used = [self._memory_disclosure(memory_id) for memory_id in memory_refs]
             used = [item for item in used if item]
