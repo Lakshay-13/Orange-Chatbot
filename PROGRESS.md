@@ -30,9 +30,10 @@ Updated: 2026-11-08 (Asia/Kolkata)
 
 ## Remaining
 
-- Final staged-file review and secret scan are clean; commit the local milestone and verify the committed repository state is clean. Do not push.
+- Final staged-file review and secret scan passed. Submission commit `d88f8e5` is created; verify the final clean repository state. Do not push.
 
 ## Git milestones
 
+- Submission milestone: `d88f8e5` (`Complete Gemini-first errand agent submission`).
 - Existing milestones: `31f9342`, `7874cd5`, `438d8e8`, `39a327b`, and `0a481d2`.
 - Current provider, credential-precedence, trace-redaction, and evidence updates are local and uncommitted. No push is authorized or planned; `.env` is excluded.
