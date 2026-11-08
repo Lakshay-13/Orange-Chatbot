@@ -54,3 +54,28 @@ The trade-offs and classifier comparison are in [docs/DESIGN_NOTE.md](docs/DESIG
 ## Demo
 
 The submitted [3:13 local recording](demo/errand_agent_demo.mov) shows chat and live trace together. Deterministic controls can inject provider outcomes and a provider cancellation without using a real service. See [demo/README.md](demo/README.md) for recording details.
+
+## Assignment submission
+
+**Recorded demo:** [Errand agent demo - Orange on YouTube](https://youtu.be/DONRzWE-14I). The repository also contains the [3:13 local screen recording](demo/errand_agent_demo.mov), with chat and the trace panel shown together.
+
+### Submission files
+
+- [Assignment goal and acceptance criteria](GOAL.md), [implementation progress](PROGRESS.md), and [architecture plan](DESIGN_PLAN.md)
+- [One-page design note](docs/DESIGN_NOTE.md), including the security-classifier trade-offs
+- [Generated evaluation table](docs/EVALUATION.md), [verified bugs and regression tests](docs/BUGS.md), and [sanitized AI-assistant transcript](docs/AI_ASSISTANT_TRANSCRIPT.md)
+- [Claude independent review](docs/CLAUDE_REVIEW.md) and [follow-up self-review](docs/PROVIDER_UPDATE_SELF_REVIEW.md)
+- [Live Gemini booking trace](docs/traces/live_gemini_booking_e2e.jsonl) and [annotated trace](docs/traces/live_gemini_booking_e2e_annotated.md)
+- [Timeout-after-possible-success trace](docs/traces/raw_timeout_after_possible_success.jsonl) and [annotated excerpt](docs/traces/annotated_timeout_excerpt.md)
+
+### Verification results
+
+Verified on **November 8, 2026**:
+
+- **113 unit tests passed** and **45/45** deterministic simulated-user scenarios passed. The evaluation runner makes no live API calls.
+- Python compilation, the JavaScript syntax check, the frontend test, and the secret scan passed.
+- The live HTTP end-to-end run used Gemini `gemini-flash-lite-latest` (catalog target `gemini-3.5-flash-lite`) to find providers, present an exact quote, and complete an explicitly approved mock booking. Authoritative status verified the booking; replaying the same confirmation did not create a duplicate.
+- OpenAI `gpt-6-luna` returned a live structured response. The fallback routing path is covered by offline tests; the successful live booking used Gemini and did not activate fallback.
+- At completion, the shared **$5** application budget ledger recorded 17 requests, 12,514 tokens, and **$0.0047096 estimated/reserved**. This total includes three earlier OpenAI requests with uncertain external billing, so it is a ledger estimate rather than a confirmed provider invoice. The live Gemini booking flow itself used 1,824 tokens across two calls, estimated at $0.0012622.
+
+The follow-up Claude review for the final provider update ran at maximum effort but returned no output after about 20 minutes. The limitation and a complete self-review are documented in [the follow-up review](docs/PROVIDER_UPDATE_SELF_REVIEW.md). The initial Claude architecture plan and independent review are retained in the files linked above.
