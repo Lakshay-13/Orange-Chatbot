@@ -30,10 +30,11 @@ Updated: 2026-11-08 (Asia/Kolkata)
 
 ## Remaining
 
-- Final staged-file review and secret scan passed. Submission commit `d88f8e5` is created; verify the final clean repository state. Do not push.
+- No remaining engineering tasks. The post-commit artifact, secret, demo, and clean-tree audit passed; no push was performed.
 
 ## Git milestones
 
+- Final verification record: `e117b04` (`Record final assignment verification`).
 - Submission milestone: `d88f8e5` (`Complete Gemini-first errand agent submission`).
 - Existing milestones: `31f9342`, `7874cd5`, `438d8e8`, `39a327b`, and `0a481d2`.
-- Current provider, credential-precedence, trace-redaction, and evidence updates are local and uncommitted. No push is authorized or planned; `.env` is excluded.
+- All assignment changes are committed locally. No push was performed; `.env` remains ignored and excluded.
